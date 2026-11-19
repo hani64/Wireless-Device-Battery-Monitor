@@ -8,8 +8,9 @@
 // Battery features: 0x1004 unified battery, 0x1000 battery level, 0x1001 battery voltage,
 // 0x1F20 ADC measurement (headsets). HID++ 1.0 devices: registers 0x0D and 0x07.
 // References: Logitech HID++ 2.0 specification drafts, github.com/pwr-Solaar/Solaar,
-// github.com/Sapd/HeadsetControl (headset voltage calibration).
+// github.com/Sapd/HeadsetControl (headset voltage calibration, see logitech_headset.h).
 #include "drivers.h"
+#include "logitech_headset.h"
 
 #include <algorithm>
 #include <cwctype>
@@ -91,22 +92,6 @@ int LiIonPercent(int mv) {
     return Interpolate(mv, v, p, 13);
 }
 
-// Voltage -> % for G headsets (calibration from HeadsetControl).
-int HeadsetPercent(USHORT pid, int mv) {
-    static const int g533v[] = { 4200, 3850, 3790, 3750, 3680, 3330 }, g533p[] = { 100, 50, 30, 20, 5, 0 };
-    static const int g535v[] = { 4175, 3817, 3766, 3730, 3664, 3310 }, g535p[] = { 100, 50, 30, 20, 5, 0 };
-    static const int g633v[] = { 4100, 3950, 3850, 3750, 3650, 3500, 3300, 3150 }, g633p[] = { 100, 80, 60, 40, 20, 10, 5, 0 };
-    static const int gprov[] = { 4150, 3830, 3780, 3740, 3670, 3320 }, gprop[] = { 100, 50, 30, 20, 5, 0 };
-    static const int defv[] = { 4100, 3850, 3780, 3730, 3650, 3300 }, defp[] = { 100, 50, 30, 20, 5, 0 };
-    switch (pid) {
-        case 0x0A66: return Interpolate(mv, g533v, g533p, 6);
-        case 0x0AC4: return Interpolate(mv, g535v, g535p, 6);
-        case 0x0A5C: case 0x0A89: case 0x0A5B: case 0x0A87: case 0x0AB5: case 0x0AFE: return Interpolate(mv, g633v, g633p, 8);
-        case 0x0AA7: case 0x0AAA: case 0x0ABA: case 0x0AFB: return Interpolate(mv, gprov, gprop, 6);
-        default: return Interpolate(mv, defv, defp, 6);
-    }
-}
-
 DeviceKind KindFromType(BYTE t) {
     switch (t) {
         case 0x00: case 0x02: return DeviceKind::Keyboard;
@@ -156,7 +141,7 @@ bool ReadBattery20(Hidpp& h, BYTE idx, USHORT pid, DeviceStatus& s) {
         if (h.Call(idx, f, 0, {}, p) && p.size() >= 3) {
             s.millivolts = (p[0] << 8) | p[1];
             s.charging = p[2] == 0x03;
-            if (s.millivolts) s.percent = HeadsetPercent(pid, s.millivolts);
+            if (s.millivolts) s.percent = LogitechHeadset::Percent(pid, s.millivolts);
             return true;
         }
     }
